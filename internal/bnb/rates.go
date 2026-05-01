@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"strconv"
 	"sync"
 	"time"
@@ -199,6 +200,11 @@ func (rr *RateRetriever) fetchRateFromBNB(date time.Time) (float64, error) {
 
 // RetrieveRateForCurrency retrieves the exchange rate for a specific currency.
 func (rr *RateRetriever) RetrieveRateForCurrency(date time.Time, currency string) (float64, error) {
+	// EUR to BGN is a fixed peg in Bulgaria
+	if strings.ToUpper(currency) == "EUR" {
+		return 1.95583, nil
+	}
+
 	dateKey := date.Format("2006-01-02") + "_" + currency
 
 	// Check cache first

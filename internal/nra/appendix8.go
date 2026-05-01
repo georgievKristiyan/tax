@@ -39,14 +39,16 @@ type StocksEnum struct {
 	Country         string   `xml:"country"`
 	Count           float64  `xml:"count"`
 	AcquireDate     string   `xml:"acquiredate"` // Format: 2006-01-02
+	Currency        string   `xml:"-"`
 	PriceInCurrency float64  `xml:"priceincurrency"`
 	Price           float64  `xml:"price"`
 }
 
 // NewStocksEnum creates a new StocksEnum entry.
-func NewStocksEnum(country string, count float64, acquireDate time.Time, priceInCurrency, price float64) StocksEnum {
+func NewStocksEnum(country, currency string, count float64, acquireDate time.Time, priceInCurrency, price float64) StocksEnum {
 	return StocksEnum{
 		Country:         country,
+		Currency:        currency,
 		Count:           utils.RoundToTwoDecimals(count),
 		AcquireDate:     acquireDate.Format("2006-01-02"),
 		PriceInCurrency: utils.RoundToTwoDecimals(priceInCurrency),
@@ -56,8 +58,8 @@ func NewStocksEnum(country string, count float64, acquireDate time.Time, priceIn
 
 // String returns a formatted string representation of the stock entry.
 func (s StocksEnum) String() string {
-	return fmt.Sprintf("Country: %s\tAmount: %.2f\tDate: %s\tIn USD: %.2f\tIn BGN: %.2f",
-		s.Country, s.Count, s.AcquireDate, s.PriceInCurrency, s.Price)
+	return fmt.Sprintf("Country: %s\tAmount: %.2f\tDate: %s\tIn %s: %.2f\tIn BGN: %.2f",
+		s.Country, s.Count, s.AcquireDate, s.Currency, s.PriceInCurrency, s.Price)
 }
 
 // JoinStocks represents joined stock entries.
@@ -169,4 +171,3 @@ func (a *Appendix8) String() string {
 	}
 	return result
 }
-

@@ -36,10 +36,34 @@ type DividendRow struct {
 	Symbol      string
 	Country     string
 	Date        string
+	AmountOriginal float64 // Original amount in original currency
+	OriginalCurrency string  // Original currency code
 	AmountBGN   float64 // amount * exchange rate
 	TaxWithheld float64 // amount * 0.10 * exchange rate
 	TaxCredited float64 // amount * 0.05 * exchange rate
 	TaxOwed     float64 // always 0
+}
+
+// mapCountry converts a country code to its Bulgarian name as required by NRA.
+func mapCountry(code string) string {
+	switch strings.ToUpper(code) {
+	case "US":
+		return "САЩ"
+	case "IE":
+		return "Ирландия"
+	case "DE":
+		return "Германия"
+	case "LU":
+		return "Люксембург"
+	case "GB":
+		return "Великобритания"
+	case "FR":
+		return "Франция"
+	case "NL":
+		return "Нидерландия"
+	default:
+		return code
+	}
 }
 
 // debugLog prints a message only if verbose mode is enabled
@@ -361,15 +385,15 @@ func printAppendix8Table(app8 *nra.Appendix8) {
 	}
 
 	// Header
-	fmt.Printf("%-10s %12s %12s %18s %18s\n",
-		"Country", "Quantity", "Date", "Value (USD)", "Value (BGN)")
+	fmt.Printf("%-10s %12s %12s %6s %18s %18s\n",
+		"Country", "Quantity", "Date", "Curr", "Value (Curr)", "Value (BGN)")
 	fmt.Println(strings.Repeat("-", 100))
 
 	// Data rows
 	var totalUSD, totalBGN float64
 	for _, stock := range app8.Stocks.Stocks {
-		fmt.Printf("%-10s %12.2f %12s %18.2f %18.2f\n",
-			stock.Country, stock.Count, stock.AcquireDate, stock.PriceInCurrency, stock.Price)
+		fmt.Printf("%-10s %12.2f %12s %6s %18.2f %18.2f\n",
+			stock.Country, stock.Count, stock.AcquireDate, stock.Currency, stock.PriceInCurrency, stock.Price)
 		totalUSD += stock.PriceInCurrency
 		totalBGN += stock.Price
 	}
@@ -377,8 +401,8 @@ func printAppendix8Table(app8 *nra.Appendix8) {
 	fmt.Println(strings.Repeat("-", 100))
 
 	// Totals
-	fmt.Printf("%-10s %12s %12s %18.2f %18.2f\n",
-		"TOTAL", "", "", totalUSD, totalBGN)
+	fmt.Printf("%-10s %12s %12s %6s %18.2f %18.2f\n",
+		"TOTAL", "", "", "", totalUSD, totalBGN)
 	fmt.Println()
 }
 
@@ -388,15 +412,16 @@ func printDividendsTable(dividends []DividendRow) {
 	fmt.Println(strings.Repeat("-", 100))
 
 	// Header
-	fmt.Printf("%-8s %-10s %12s %15s %15s %15s %12s\n",
-		"Symbol", "Country", "Date", "Amount (BGN)", "Tax Paid 10%", "Tax Credit 5%", "Tax Owed")
+	fmt.Printf("%-8s %-10s %12s %12s %5s %15s %15s %15s %12s\n",
+		"Symbol", "Country", "Date", "Amount", "Curr", "Amount (BGN)", "Tax Paid 10%", "Tax Credit 5%", "Tax Owed")
 	fmt.Println(strings.Repeat("-", 100))
 
 	// Data rows
 	var totalAmount, totalTaxWithheld, totalTaxCredited, totalTaxOwed float64
 	for _, div := range dividends {
-		fmt.Printf("%-8s %-10s %12s %15.2f %15.2f %15.2f %12.2f\n",
-			div.Symbol, div.Country, div.Date, div.AmountBGN, div.TaxWithheld, div.TaxCredited, div.TaxOwed)
+		fmt.Printf("%-8s %-10s %12s %12.2f %5s %15.2f %15.2f %15.2f %12.2f\n",
+			div.Symbol, div.Country, div.Date, div.AmountOriginal, div.OriginalCurrency,
+			div.AmountBGN, div.TaxWithheld, div.TaxCredited, div.TaxOwed)
 		totalAmount += div.AmountBGN
 		totalTaxWithheld += div.TaxWithheld
 		totalTaxCredited += div.TaxCredited
@@ -404,10 +429,9 @@ func printDividendsTable(dividends []DividendRow) {
 	}
 
 	fmt.Println(strings.Repeat("-", 100))
-
-	// Totals
-	fmt.Printf("%-8s %-10s %12s %15.2f %15.2f %15.2f %12.2f\n",
-		"TOTAL", "", "", totalAmount, totalTaxWithheld, totalTaxCredited, totalTaxOwed)
+	// Totals (only BGN amounts are summed meaningfully)
+	fmt.Printf("%-8s %-10s %12s %12s %5s %15.2f %15.2f %15.2f %12.2f\n",
+		"TOTAL", "", "", "", "", totalAmount, totalTaxWithheld, totalTaxCredited, totalTaxOwed)
 	fmt.Println()
 }
 
@@ -487,7 +511,12 @@ func processAppendix8(rr *bnb.RateRetriever, holdings []broker.HoldingStock) *nr
 	var totalUSD, totalBGN float64
 
 	for i, h := range holdings {
-		rate, err := rr.RetrieveRate(h.Date)
+		currency := h.Currency
+		if currency == "" {
+			currency = "USD"
+		}
+
+		rate, err := rr.RetrieveRateForCurrency(h.Date, currency)
 		if err != nil {
 			fmt.Printf("  Warning: failed to get rate for %s: %v\n", h.Date.Format("2006-01-02"), err)
 			continue
@@ -497,18 +526,20 @@ func processAppendix8(rr *bnb.RateRetriever, holdings []broker.HoldingStock) *nr
 		priceInBGN := priceInCurrency * rate
 
 		debugLog("  Holding #%d:", i+1)
-		debugLog("    Date: %s, Qty: %.2f, Price/Share: %.2f USD",
-			h.Date.Format("2006-01-02"), h.Amount, h.Price)
-		debugLog("    Total USD: %.2f × %.2f = %.2f USD",
-			h.Price, h.Amount, priceInCurrency)
-		debugLog("    Rate: %.4f, Total BGN: %.2f × %.4f = %.2f BGN",
-			rate, priceInCurrency, rate, priceInBGN)
+		debugLog("    Date: %s, Qty: %.2f, Price/Share: %.2f %s",
+			h.Date.Format("2006-01-02"), h.Amount, h.Price, currency)
+		debugLog("    Currency: %s, Rate: %.4f", currency, rate)
+		debugLog("    Total %s: %.2f × %.2f = %.2f %s",
+			currency, h.Price, h.Amount, priceInCurrency, currency)
+		debugLog("    Total BGN: %.2f × %.4f = %.2f BGN",
+			priceInCurrency, rate, priceInBGN)
 
 		totalUSD += priceInCurrency
 		totalBGN += priceInBGN
 
 		stock := nra.NewStocksEnum(
-			"САЩ", // USA in Bulgarian
+			mapCountry(h.Country),
+			currency,
 			h.Amount,
 			h.Date,
 			priceInCurrency,
@@ -536,44 +567,62 @@ func processDividends(rr *bnb.RateRetriever, dividends []broker.Dividend) []Divi
 	})
 
 	var rows []DividendRow
-	var totalAmountUSD, totalAmountBGN float64
+	var totalAmountBGN float64
 
 	for i, div := range dividends {
-		rate, err := rr.RetrieveRate(div.Date)
+		currency := div.Currency
+		if currency == "" {
+			currency = "USD"
+		}
+
+		rate, err := rr.RetrieveRateForCurrency(div.Date, currency)
 		if err != nil {
 			fmt.Printf("  Warning: failed to get rate for %s: %v\n", div.Date.Format("2006-01-02"), err)
 			continue
 		}
 
 		amountBGN := div.Amount * rate
-		taxWithheld := div.Amount * 0.10 * rate // 10% tax withheld
-		taxCredited := div.Amount * 0.05 * rate // 5% tax credit allowed
+		taxWithheld := div.Amount * 0.10 * rate // Default 10% tax withheld
+
+		var taxCredited float64
+		var taxOwed float64
+
+		// Rule: If subCategory is ETF and dividendType is Mixed Income, no tax credit, 5% owed.
+		if strings.ToUpper(div.SubCategory) == "ETF" && strings.ToLower(div.DividendType) == "mixed income" {
+			taxCredited = 0.0
+			taxOwed = div.Amount * 0.05 * rate // 5% of gross amount in BGN
+			debugLog("    Special rule applied: ETF Mixed Income. No tax credit, 5%% tax owed.")
+		} else {
+			taxCredited = div.Amount * 0.05 * rate // Default 5% tax credit
+			taxOwed = 0.0
+		}
 
 		debugLog("  Dividend #%d (%s):", i+1, div.Symbol)
 		debugLog("    Date: %s, Amount: %.2f %s",
 			div.Date.Format("2006-01-02"), div.Amount, div.Currency)
-		debugLog("    Rate: %.4f, Amount BGN: %.2f × %.4f = %.2f BGN",
-			rate, div.Amount, rate, amountBGN)
-		debugLog("    Tax Withheld (10%%): %.2f × 0.10 × %.4f = %.2f BGN",
-			div.Amount, rate, taxWithheld)
-		debugLog("    Tax Credit (5%%): %.2f × 0.05 × %.4f = %.2f BGN",
-			div.Amount, rate, taxCredited)
+		debugLog("    Rate: %.4f, Amount BGN: %.2f BGN", rate, amountBGN)
+		debugLog("    Tax Withheld (10%%): %.2f BGN", taxWithheld)
+		debugLog("    Tax Credit (5%%): %.2f BGN", taxCredited)
+		debugLog("    Tax Owed (5%%): %.2f BGN", taxOwed)
 
-		totalAmountUSD += div.Amount
+		// totalAmountUSD is not meaningful if currencies are mixed, better to remove or make currency-specific
+		// For now, only sum BGN amounts for totals.
 		totalAmountBGN += amountBGN
 
 		rows = append(rows, DividendRow{
 			Symbol:      div.Symbol,
-			Country:     div.IssuerCountryCode,
+			Country:     mapCountry(div.IssuerCountryCode),
 			Date:        div.Date.Format("2006-01-02"),
+			AmountOriginal: div.Amount,
+			OriginalCurrency: currency,
 			AmountBGN:   amountBGN,
 			TaxWithheld: taxWithheld,
 			TaxCredited: taxCredited,
-			TaxOwed:     0, // Always 0
+			TaxOwed:     taxOwed,
 		})
 	}
 
-	debugLog("  Totals: %.2f USD = %.2f BGN", totalAmountUSD, totalAmountBGN)
+	debugLog("  Totals: Total BGN: %.2f BGN", totalAmountBGN)
 
 	return rows
 }
