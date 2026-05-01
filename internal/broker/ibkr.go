@@ -162,6 +162,8 @@ type CashTransaction struct {
 	Amount            string `xml:"amount,attr"`
 	Type              string `xml:"type,attr"`
 	LevelOfDetail     string `xml:"levelOfDetail,attr"`
+	SubCategory       string `xml:"subCategory,attr"`
+	DividendType      string `xml:"dividendType,attr"`
 }
 
 // ParseSoldStocks parses IBKR Flex Query XML for sold stocks.
@@ -306,9 +308,11 @@ func (p *IBKRParser) ParseHoldings(filePath string) ([]HoldingStock, error) {
 			}
 
 			holdings = append(holdings, HoldingStock{
-				Date:   date,
-				Amount: amount,
-				Price:  price,
+				Date:     date,
+				Amount:   amount,
+				Price:    price,
+				Currency: pos.Currency,
+				Country:  pos.IssuerCountryCode,
 			})
 		}
 	}
@@ -360,18 +364,14 @@ func (p *IBKRParser) ParseDividends(filePath string) ([]Dividend, error) {
 				continue
 			}
 
-			// Map country code to Bulgarian name
-			country := tx.IssuerCountryCode
-			if country == "US" {
-				country = "САЩ"
-			}
-
 			dividends = append(dividends, Dividend{
 				Symbol:            tx.Symbol,
 				Date:              date,
 				Amount:            amount,
 				Currency:          tx.Currency,
-				IssuerCountryCode: country,
+				IssuerCountryCode: tx.IssuerCountryCode,
+				SubCategory:       tx.SubCategory,
+				DividendType:      tx.DividendType,
 			})
 		}
 	}

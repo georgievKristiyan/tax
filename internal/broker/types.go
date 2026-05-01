@@ -15,9 +15,11 @@ type SoldStock struct {
 
 // HoldingStock represents a stock holding (sellable stock).
 type HoldingStock struct {
-	Date   time.Time
-	Amount float64
-	Price  float64
+	Date     time.Time
+	Amount   float64
+	Price    float64
+	Currency string
+	Country  string
 }
 
 // Dividend represents a dividend payment received.
@@ -27,6 +29,8 @@ type Dividend struct {
 	Amount            float64 // Gross dividend amount in original currency
 	Currency          string
 	IssuerCountryCode string
+	SubCategory       string
+	DividendType      string
 }
 
 // Parser defines the interface for parsing broker-specific data files.

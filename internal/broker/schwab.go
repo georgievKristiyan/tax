@@ -278,7 +278,7 @@ func (p *SchwabParser) ParseDividends(filePath string) ([]Dividend, error) {
 			Date:              date,
 			Amount:            amount,
 			Currency:          "USD",
-			IssuerCountryCode: "САЩ",
+			IssuerCountryCode: "US",
 		})
 	}
 
@@ -422,7 +422,10 @@ func (p *SchwabParser) parseHoldingsCSV(filePath string) ([]HoldingStock, error)
 }
 
 func (p *SchwabParser) parseSchwabPositionRecord(record []string, headerIdx map[string]int) (HoldingStock, error) {
-	var holding HoldingStock
+	holding := HoldingStock{
+		Currency: "USD",
+		Country:  "US",
+	}
 
 	// Column name variations (lowercase for matching)
 	dateCols := []string{"vest date", "acquisition date", "date acquired", "purchase date", "date"}
@@ -520,4 +523,3 @@ func (p *SchwabParser) parseHoldingsExcel(filePath string) ([]HoldingStock, erro
 
 	return holdings, nil
 }
-
